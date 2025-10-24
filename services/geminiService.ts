@@ -8,14 +8,22 @@ const timeRangeTextMap: Record<TimeRange, string> = {
   '3months': 'last 3 months',
 };
 
-export const fetchTopKeywords = async (timeRange: TimeRange): Promise<Keyword[]> => {
+const PAGE_SIZE = 12;
+
+export const fetchTopKeywords = async (timeRange: TimeRange, lowCompetitionOnly: boolean, page: number): Promise<Keyword[]> => {
   try {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const timeText = timeRangeTextMap[timeRange];
 
+    const promptIntro = lowCompetitionOnly
+      ? "List book-related search keywords on Amazon that are highly profitable but have very low competition, making them ideal for new authors."
+      : "List book-related search keywords on Amazon.";
+
+    const contents = `${promptIntro} The timeframe is the ${timeText}. Return ${PAGE_SIZE} results for page ${page}. For each keyword, provide an estimated monthly search volume as a number, and the estimated monthly revenue potential as a string (e.g., '$5k - $10k').`;
+
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
-      contents: `List the top 12 book-related search keywords on Amazon in the ${timeText}. For each keyword, provide an estimated monthly search volume as a number, and the estimated monthly revenue potential as a string (e.g., '$5k - $10k').`,
+      contents: contents,
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -23,7 +31,7 @@ export const fetchTopKeywords = async (timeRange: TimeRange): Promise<Keyword[]>
           properties: {
             keywords: {
               type: Type.ARRAY,
-              description: "A list of top book-related keywords.",
+              description: `A list of ${PAGE_SIZE} book-related keywords.`,
               items: {
                 type: Type.OBJECT,
                 properties: {
@@ -70,7 +78,7 @@ export const fetchKeywordDetails = async (keyword: string): Promise<KeywordDetai
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
-      contents: `For the book keyword "${keyword}" on Amazon, provide detailed insights for an author. The response should be a JSON object containing: 1. 'relatedKeywords': an array of objects, each with 'keyword' (string), 'volume' (number), and 'type' ('short' or 'long'). 2. 'profitableTopics': an array of strings with topic recommendations. 3. 'authorTips': an array of strings with other tips for authors researching this niche.`,
+      contents: `For the book keyword "${keyword}" on Amazon, provide detailed insights for an author. The response should be a JSON object containing: 1. 'relatedKeywords': an array of objects, each with 'keyword' (string), 'volume' (number), 'type' ('short' or 'long'), and 'competitors' (estimated number of competing books). 2. 'profitableTopics': an array of strings with topic recommendations. 3. 'authorTips': an array of strings with other tips for authors researching this niche.`,
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -84,8 +92,9 @@ export const fetchKeywordDetails = async (keyword: string): Promise<KeywordDetai
                   keyword: { type: Type.STRING },
                   volume: { type: Type.NUMBER },
                   type: { type: Type.STRING, enum: ['short', 'long'] },
+                  competitors: { type: Type.NUMBER, description: "Estimated number of competing books." },
                 },
-                required: ['keyword', 'volume', 'type'],
+                required: ['keyword', 'volume', 'type', 'competitors'],
               },
             },
             profitableTopics: {

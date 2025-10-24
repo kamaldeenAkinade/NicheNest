@@ -11,6 +11,7 @@ export interface KeywordDetails {
     keyword: string;
     volume: number;
     type: 'short' | 'long';
+    competitors: number;
   }[];
   profitableTopics: string[];
   authorTips: string[];

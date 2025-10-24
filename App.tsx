@@ -4,6 +4,8 @@ import { Keyword, KeywordDetails, TimeRange } from './types';
 import KeywordCard from './components/BookCard';
 import Spinner from './components/Spinner';
 
+const PAGE_SIZE = 12;
+
 const NicheNestLogo: React.FC = () => (
   <svg width="48" height="48" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="inline-block mr-3">
     <path d="M12 2L2 7V17L12 22L22 17V7L12 2Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
@@ -49,6 +51,7 @@ const KeywordDetailsComponent: React.FC<{ keyword: string; onBack: () => void }>
                 <tr>
                   <th className="p-3 font-semibold text-sm">Keyword</th>
                   <th className="p-3 font-semibold text-sm">Volume</th>
+                  <th className="p-3 font-semibold text-sm">Competitors</th>
                   <th className="p-3 font-semibold text-sm">Type</th>
                 </tr>
               </thead>
@@ -57,6 +60,7 @@ const KeywordDetailsComponent: React.FC<{ keyword: string; onBack: () => void }>
                   <tr key={i} className="border-b border-gray-200 dark:border-gray-700">
                     <td className="p-3">{kw.keyword}</td>
                     <td className="p-3">{kw.volume.toLocaleString()}</td>
+                    <td className="p-3">{kw.competitors.toLocaleString()}</td>
                     <td className="p-3 capitalize">{kw.type}</td>
                   </tr>
                 ))}
@@ -104,6 +108,9 @@ const App: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [selectedKeyword, setSelectedKeyword] = useState<string | null>(null);
   const [timeRange, setTimeRange] = useState<TimeRange>('24hours');
+  const [showLowCompetitionOnly, setShowLowCompetitionOnly] = useState<boolean>(false);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [hasMoreResults, setHasMoreResults] = useState<boolean>(true);
 
   useEffect(() => {
     if (selectedKeyword === null) {
@@ -111,8 +118,9 @@ const App: React.FC = () => {
         try {
           setIsLoading(true);
           setError(null);
-          const fetchedKeywords = await fetchTopKeywords(timeRange);
+          const fetchedKeywords = await fetchTopKeywords(timeRange, showLowCompetitionOnly, currentPage);
           setKeywords(fetchedKeywords);
+          setHasMoreResults(fetchedKeywords.length === PAGE_SIZE);
         } catch (err) {
           setError(err instanceof Error ? err.message : 'An unknown error occurred.');
         } finally {
@@ -121,7 +129,19 @@ const App: React.FC = () => {
       };
       loadKeywords();
     }
-  }, [selectedKeyword, timeRange]);
+  }, [selectedKeyword, timeRange, showLowCompetitionOnly, currentPage]);
+
+  const handleTimeRangeChange = (newTimeRange: TimeRange) => {
+    setTimeRange(newTimeRange);
+    setCurrentPage(1);
+    setHasMoreResults(true);
+  };
+
+  const handleLowCompetitionToggle = () => {
+    setShowLowCompetitionOnly(prev => !prev);
+    setCurrentPage(1);
+    setHasMoreResults(true);
+  };
 
   const renderContent = () => {
     if (isLoading) return <Spinner />;
@@ -129,14 +149,35 @@ const App: React.FC = () => {
     if (selectedKeyword) {
       return <KeywordDetailsComponent keyword={selectedKeyword} onBack={() => setSelectedKeyword(null)} />;
     }
-    if (keywords.length === 0) return <div className="text-center p-8 text-gray-500 dark:text-gray-400"><h2 className="text-2xl font-bold">No keywords found.</h2><p>Please try a different time range or try again later.</p></div>;
+    if (keywords.length === 0) return <div className="text-center p-8 text-gray-500 dark:text-gray-400"><h2 className="text-2xl font-bold">No keywords found.</h2><p>Please try a different filter or try again later.</p></div>;
 
     return (
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
-        {keywords.map((kw, index) => (
-          <KeywordCard key={`${kw.keyword}-${index}`} keywordData={kw} onClick={() => setSelectedKeyword(kw.keyword)} />
-        ))}
-      </div>
+      <>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
+          {keywords.map((kw, index) => (
+            <KeywordCard key={`${kw.keyword}-${index}`} keywordData={kw} onClick={() => setSelectedKeyword(kw.keyword)} />
+          ))}
+        </div>
+        <div className="mt-12 flex justify-center items-center gap-4">
+            <button
+              onClick={() => setCurrentPage(p => p - 1)}
+              disabled={currentPage === 1 || isLoading}
+              className="px-4 py-2 text-sm font-medium rounded-md transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-100 dark:focus:ring-offset-gray-900 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
+            >
+              &larr; Previous
+            </button>
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              Page {currentPage}
+            </span>
+            <button
+              onClick={() => setCurrentPage(p => p + 1)}
+              disabled={!hasMoreResults || isLoading}
+              className="px-4 py-2 text-sm font-medium rounded-md transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-100 dark:focus:ring-offset-gray-900 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
+            >
+              Next &rarr;
+            </button>
+        </div>
+      </>
     );
   };
 
@@ -156,7 +197,7 @@ const App: React.FC = () => {
               {filterOptions.map(({ label, value }) => (
                 <button
                   key={value}
-                  onClick={() => setTimeRange(value)}
+                  onClick={() => handleTimeRangeChange(value)}
                   className={`px-4 py-2 text-sm font-medium rounded-full transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-100 dark:focus:ring-offset-gray-900 focus:ring-blue-500 ${
                     timeRange === value
                       ? 'bg-blue-600 text-white shadow'
@@ -167,6 +208,28 @@ const App: React.FC = () => {
                   {label}
                 </button>
               ))}
+            </div>
+
+            <div className="mt-6 flex justify-center items-center gap-3">
+              <span className="text-sm font-medium text-gray-700 dark:text-gray-300" id="low-competition-label">
+                Low-Competition Mode
+              </span>
+              <button
+                onClick={handleLowCompetitionToggle}
+                role="switch"
+                aria-checked={showLowCompetitionOnly}
+                aria-labelledby="low-competition-label"
+                className={`${
+                  showLowCompetitionOnly ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-700'
+                } relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2`}
+              >
+                <span
+                  aria-hidden="true"
+                  className={`${
+                    showLowCompetitionOnly ? 'translate-x-5' : 'translate-x-0'
+                  } pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out`}
+                />
+              </button>
             </div>
           </header>
         )}
